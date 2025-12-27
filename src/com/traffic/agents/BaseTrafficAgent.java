@@ -19,17 +19,30 @@ public abstract class BaseTrafficAgent extends Agent {
         addBehaviour(new TickerBehaviour(this, 50) {
             @Override
             protected void onTick() {
-                perceive();
-                decide();
-                // Synchronize state with environment
-                Environment.getInstance().updateVehicleState(getLocalName(), position, null, speed, null, null);
+                try {
+                    if (Environment.getInstance().isPaused())
+                        return;
 
-                ACLMessage msg = receive();
-                while (msg != null) {
-                    handleMessage(msg);
-                    msg = receive();
+                    perceive();
+                    decide();
+                    // Synchronize state with environment
+                    if (position != null) {
+                        Environment.getInstance().updateVehicleState(BaseTrafficAgent.this.getAID().getLocalName(),
+                                position, null, speed,
+                                null, null);
+                    }
+
+                    ACLMessage msg = receive();
+                    while (msg != null) {
+                        handleMessage(msg);
+                        msg = receive();
+                    }
+                } catch (Throwable t) {
+                    System.err.println(
+                            "CRITICAL ERROR in Agent " + BaseTrafficAgent.this.getAID().getLocalName() + ": "
+                                    + t.getMessage());
+                    t.printStackTrace();
                 }
-                decide();
             }
         });
     }
@@ -44,6 +57,7 @@ public abstract class BaseTrafficAgent extends Agent {
 
     @Override
     protected void takeDown() {
+        Environment.getInstance().removeVehicle(this.getAID().getLocalName());
         super.takeDown();
     }
 

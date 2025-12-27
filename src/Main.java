@@ -62,11 +62,13 @@ public class Main {
                 Runtime rt = Runtime.instance();
                 Profile p = new ProfileImpl();
                 AgentContainer mainContainer = rt.createMainContainer(p);
+                env.setMainContainer(mainContainer);
 
                 try {
                         mainContainer.createNewAgent("TL_R1_I1", "com.traffic.agents.TrafficLightAgent",
                                         new Object[] { "290", "300", "R1" }).start();
-                        mainContainer.createNewAgent("Spawner", "com.traffic.agents.VehicleSpawnerAgent", null).start();
+                        mainContainer.createNewAgent("Spawner", "com.traffic.agents.VehicleSpawnerAgent", null)
+                                        .start();
                         mainContainer.createNewAgent("Metrics", "com.traffic.agents.MetricsAgent", null).start();
                 } catch (Exception e) {
                         e.printStackTrace();
@@ -109,8 +111,75 @@ public class Main {
                                 exchange.getResponseBody().close();
                         });
 
+                        server.createContext("/api/control", exchange -> {
+                                exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+                                if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                                        String body = new java.io.BufferedReader(
+                                                        new java.io.InputStreamReader(exchange.getRequestBody()))
+                                                        .lines().collect(Collectors.joining("\n"));
+                                        if (body.contains("pause"))
+                                                env.setPaused(true);
+                                        else if (body.contains("resume"))
+                                                env.setPaused(false);
+                                        if (body.contains("speed")) {
+                                                if (body.contains("1.0"))
+                                                        env.setTimeMultiplier(1.0);
+                                                else
+                                                        env.setTimeMultiplier(2.0);
+                                        }
+                                        exchange.sendResponseHeaders(200, -1);
+                                } else {
+                                        exchange.sendResponseHeaders(405, -1);
+                                }
+                                exchange.close();
+                        });
+
+                        server.createContext("/api/incident", exchange -> {
+                                exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+                                if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                                        String body = new java.io.BufferedReader(
+                                                        new java.io.InputStreamReader(exchange.getRequestBody()))
+                                                        .lines().collect(Collectors.joining("\n"));
+                                        double x = 500, y = 500;
+                                        if (body.contains("x")) {
+                                                try {
+                                                        String[] p = body.split("[,&:]");
+                                                        for (String s : p) {
+                                                                if (s.contains("x"))
+                                                                        x = Double.parseDouble(
+                                                                                        s.replaceAll("[^0-9.]", "")
+                                                                                                        .trim());
+                                                                if (s.contains("y"))
+                                                                        y = Double.parseDouble(
+                                                                                        s.replaceAll("[^0-9.]", "")
+                                                                                                        .trim());
+                                                        }
+                                                } catch (Exception e) {
+                                                }
+                                        }
+                                        RoadSegment target = env.getRoadAt(new Position(x, y));
+                                        if (target != null && env.getMainContainer() != null) {
+                                                try {
+                                                        env.getMainContainer().createNewAgent(
+                                                                        "Incident_" + System.currentTimeMillis(),
+                                                                        "com.traffic.agents.IncidentAgent",
+                                                                        new Object[] { x, y, target.getId() }).start();
+                                                } catch (Exception e) {
+                                                        e.printStackTrace();
+                                                }
+                                        }
+                                        exchange.sendResponseHeaders(200, -1);
+                                } else {
+                                        exchange.sendResponseHeaders(405, -1);
+                                }
+                                exchange.close();
+                        });
+
                         server.start();
                         System.out.println("API Bridge started at http://localhost:8080");
+                } catch (java.net.BindException be) {
+                        System.err.println("!!! PORT 8080 ALREADY IN USE. API BRIDGE FAILED TO START.");
+                        System.err.println("Monitoring will continue within JADE but dashboard data may be stale.");
                 } catch (Exception e) {
                         e.printStackTrace();
                 }

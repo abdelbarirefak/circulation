@@ -9,7 +9,9 @@ public class RoadSegment {
     private boolean isOneWay;
 
     private Position controlPoint; // For Quadratic Bezier curves
+    private Position circularCenter; // For roundabout arcs
     private boolean isCurved = false;
+    private boolean isCircular = false;
     private boolean isYieldTarget = false; // For roundabout yielding
 
     public RoadSegment(String id, Position start, Position end, int lanes, double speedLimit, boolean isOneWay) {
@@ -76,6 +78,23 @@ public class RoadSegment {
     }
 
     public Position getPointAt(double t) {
+        if (isCircular && circularCenter != null) {
+            double startAngle = Math.atan2(start.getY() - circularCenter.getY(), start.getX() - circularCenter.getX());
+            double endAngle = Math.atan2(end.getY() - circularCenter.getY(), end.getX() - circularCenter.getX());
+
+            // Handle wrap-around for circular arcs
+            double diff = endAngle - startAngle;
+            if (diff > Math.PI)
+                diff -= 2 * Math.PI;
+            if (diff < -Math.PI)
+                diff += 2 * Math.PI;
+
+            double currentAngle = startAngle + diff * t;
+            double radius = start.distanceTo(circularCenter);
+            return new Position(
+                    circularCenter.getX() + Math.cos(currentAngle) * radius,
+                    circularCenter.getY() + Math.sin(currentAngle) * radius);
+        }
         if (!isCurved) {
             return new Position(
                     start.getX() + (end.getX() - start.getX()) * t,
@@ -90,6 +109,20 @@ public class RoadSegment {
     }
 
     public double getAngleAt(double t) {
+        if (isCircular && circularCenter != null) {
+            Position pos = getPointAt(t);
+            double angleToCenter = Math.atan2(pos.getY() - circularCenter.getY(), pos.getX() - circularCenter.getX());
+            // Tangent is perpendicular to radius (checking direction of arc)
+            double startAngle = Math.atan2(start.getY() - circularCenter.getY(), start.getX() - circularCenter.getX());
+            double endAngle = Math.atan2(end.getY() - circularCenter.getY(), end.getX() - circularCenter.getX());
+            double diff = endAngle - startAngle;
+            if (diff > Math.PI)
+                diff -= 2 * Math.PI;
+            if (diff < -Math.PI)
+                diff += 2 * Math.PI;
+
+            return (diff > 0) ? angleToCenter + Math.PI / 2 : angleToCenter - Math.PI / 2;
+        }
         if (!isCurved)
             return getAngle();
         // Derivative B'(t) = 2(1-t)(P1-P0) + 2t(P2-P1)
@@ -100,6 +133,12 @@ public class RoadSegment {
 
     public double getAngle() {
         return Math.atan2(end.getY() - start.getY(), end.getX() - start.getX());
+    }
+
+    public void setCircular(Position center) {
+        this.circularCenter = center;
+        this.isCircular = (center != null);
+        this.isCurved = isCircular;
     }
 
     public boolean isCurved() {

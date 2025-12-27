@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { io } from 'socket.io-client';
 
 export function useTrafficStream() {
     const [state, setState] = useState({ vehicles: [] });
@@ -11,15 +12,14 @@ export function useTrafficStream() {
             .then(data => setMap(data))
             .catch(err => console.error('Map fetch failed:', err));
 
-        // 2. Listen to real-time stream
-        const eventSource = new EventSource('http://localhost:8080/api/stream');
+        // 2. Connect to Digital Twin Gateway
+        const socket = io('http://localhost:3001');
 
-        eventSource.onmessage = (event) => {
-            const newState = JSON.parse(event.data);
+        socket.on('state_update', (newState) => {
             setState(newState);
-        };
+        });
 
-        return () => eventSource.close();
+        return () => socket.disconnect();
     }, []);
 
     return { state, map };

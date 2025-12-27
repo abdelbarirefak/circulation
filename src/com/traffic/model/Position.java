@@ -3,17 +3,27 @@ package com.traffic.model;
 public class Position {
     private double x;
     private double y;
+    private double z;
     private int lane;
 
     public Position(double x, double y) {
         this.x = x;
         this.y = y;
+        this.z = 0;
         this.lane = 0;
     }
 
-    public Position(double x, double y, int lane) {
+    public Position(double x, double y, double z) {
         this.x = x;
         this.y = y;
+        this.z = z;
+        this.lane = 0;
+    }
+
+    public Position(double x, double y, double z, int lane) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
         this.lane = lane;
     }
 
@@ -33,6 +43,14 @@ public class Position {
         this.y = y;
     }
 
+    public double getZ() {
+        return z;
+    }
+
+    public void setZ(double z) {
+        this.z = z;
+    }
+
     public int getLane() {
         return lane;
     }
@@ -42,11 +60,11 @@ public class Position {
     }
 
     public double distanceTo(Position other) {
-        return Math.sqrt(Math.pow(x - other.x, 2) + Math.pow(y - other.y, 2));
+        return Math.sqrt(Math.pow(x - other.x, 2) + Math.pow(y - other.y, 2) + Math.pow(z - other.z, 2));
     }
 
     @Override
     public String toString() {
-        return "(" + String.format("%.1f", x) + ", " + String.format("%.1f", y) + ")";
+        return "(" + String.format("%.1f", x) + ", " + String.format("%.1f", y) + ", " + String.format("%.1f", z) + ")";
     }
 }

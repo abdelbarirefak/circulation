@@ -8,6 +8,7 @@ import com.traffic.model.Position;
 public class IncidentAgent extends BaseTrafficAgent {
     private String roadId;
     private long duration;
+    private Environment.Incident incident;
 
     @Override
     protected void initializeProperties() {
@@ -27,11 +28,12 @@ public class IncidentAgent extends BaseTrafficAgent {
         direction = 0;
         perceptionRadius = 0;
 
-        Environment.getInstance().addIncident(roadId, position, duration);
+        this.incident = new Environment.Incident(roadId, position, duration);
+        Environment.getInstance().addIncident(this.incident);
 
         addBehaviour(new WakerBehaviour(this, duration) {
             @Override
-            protected void handleElapsedTimeout() {
+            protected void onWake() {
                 myAgent.doDelete();
             }
         });
@@ -51,6 +53,9 @@ public class IncidentAgent extends BaseTrafficAgent {
 
     @Override
     protected void takeDown() {
-        Environment.getInstance().removeIncident(roadId, position);
+        if (incident != null) {
+            Environment.getInstance().removeIncident(this.incident);
+        }
+        super.takeDown();
     }
 }

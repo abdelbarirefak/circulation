@@ -16,6 +16,7 @@ public class VehicleSpawnerAgent extends BaseTrafficAgent {
 
     @Override
     protected void initializeProperties() {
+        position = new com.traffic.model.Position(0, 0);
         speed = 0;
         direction = 0;
         perceptionRadius = 0;
@@ -61,7 +62,8 @@ public class VehicleSpawnerAgent extends BaseTrafficAgent {
 
             AgentController ac = cc.createNewAgent(vehicleName, "com.traffic.agents.VehicleAgent", args);
             ac.start();
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            System.err.println("FAILED TO SPAWN VEHICLE: " + vehicleName);
             e.printStackTrace();
         }
     }

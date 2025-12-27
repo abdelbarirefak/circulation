@@ -23,17 +23,46 @@ public class Environment {
     private Map<String, RoadSegment> roads = new ConcurrentHashMap<>();
     private Map<String, Intersection> intersections = new ConcurrentHashMap<>();
     private Map<String, Roundabout> roundabouts = new ConcurrentHashMap<>();
-    private List<Incident> activeIncidents = new ArrayList<>();
+    private List<Incident> activeIncidents = new java.util.concurrent.CopyOnWriteArrayList<>();
     private Map<String, Double> historicalCongestion = new ConcurrentHashMap<>();
+    private boolean isPaused = false;
+    private double timeMultiplier = 1.0;
+    private jade.wrapper.AgentContainer mainContainer;
+
+    public boolean isPaused() {
+        return isPaused;
+    }
+
+    public void setPaused(boolean paused) {
+        this.isPaused = paused;
+    }
+
+    public double getTimeMultiplier() {
+        return timeMultiplier;
+    }
+
+    public void setTimeMultiplier(double mult) {
+        this.timeMultiplier = mult;
+    }
+
+    public jade.wrapper.AgentContainer getMainContainer() {
+        return mainContainer;
+    }
+
+    public void setMainContainer(jade.wrapper.AgentContainer container) {
+        this.mainContainer = container;
+    }
 
     public static class Incident {
         public String roadId;
         public Position position;
+        public double z; // 3D elevation
         public long duration;
 
         public Incident(String roadId, Position position, long duration) {
             this.roadId = roadId;
             this.position = position;
+            this.z = position.getZ();
             this.duration = duration;
         }
     }

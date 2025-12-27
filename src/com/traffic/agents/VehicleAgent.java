@@ -189,8 +189,9 @@ public class VehicleAgent extends BaseTrafficAgent {
             speed = Math.max(0, speed + accel);
         }
 
-        progress += speed;
-        if (progress >= road.getLength()) {
+        progress += speed * Environment.getInstance().getTimeMultiplier();
+        double threshold = Math.max(5.0, speed * 0.5);
+        if (progress >= road.getLength() - threshold) {
             handleIntersectionEntry(env, road);
             progress = 0;
         } else {
@@ -219,17 +220,30 @@ public class VehicleAgent extends BaseTrafficAgent {
 
         position.setX(basePos.getX() + Math.cos(perpAngle) * offset);
         position.setY(basePos.getY() + Math.sin(perpAngle) * offset);
+        position.setZ(basePos.getZ()); // Support for 3D elevation
         direction = roadAngle;
     }
 
     private void handleIntersectionEntry(Environment env, RoadSegment currentRoad) {
         if (!plannedPath.isEmpty()) {
-            String nextId = plannedPath.remove(0);
+            String nextId = plannedPath.get(0);
             RoadSegment nextRoad = env.getRoads().get(nextId);
+
+            // If we are in a roundabout or transitioning between circular segments, switch
+            // immediately
+            boolean isRoundaboutTransition = currentRoad.isCurved() || (nextRoad != null && nextRoad.isCurved());
+
             if (nextRoad != null) {
+                plannedPath.remove(0);
                 currentRoadId = nextId;
                 position.setX(nextRoad.getStart().getX());
                 position.setY(nextRoad.getStart().getY());
+
+                // If it's a roundabout, snap progress forward slightly to avoid re-triggering
+                // intersection
+                if (isRoundaboutTransition) {
+                    progress = speed;
+                }
                 return;
             }
         }
@@ -240,6 +254,8 @@ public class VehicleAgent extends BaseTrafficAgent {
             currentRoadId = nextRoad.getId();
             position.setX(nextRoad.getStart().getX());
             position.setY(nextRoad.getStart().getY());
+            if (nextRoad.isCurved())
+                progress = speed;
         } else {
             env.removeVehicle(getLocalName());
             doDelete();
@@ -270,8 +286,4 @@ public class VehicleAgent extends BaseTrafficAgent {
         }
     }
 
-    @Override
-    protected void takeDown() {
-        Environment.getInstance().removeVehicle(getLocalName());
-    }
 }

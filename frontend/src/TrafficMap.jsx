@@ -3,25 +3,36 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 
-function Vehicle({ vehicle }) {
+function Vehicle({ vehicle, isSelected, onClick }) {
     const group = useRef();
 
-    // Smooth Interpolation
     useFrame((state, delta) => {
         if (group.current) {
             group.current.position.x = THREE.MathUtils.lerp(group.current.position.x, vehicle.x, 0.15);
             group.current.position.y = THREE.MathUtils.lerp(group.current.position.y, -vehicle.y, 0.15);
+            group.current.position.z = THREE.MathUtils.lerp(group.current.position.z, (vehicle.z || 0) + 10, 0.15);
         }
     });
 
     return (
-        <group ref={group} position={[vehicle.x, -vehicle.y, 10]}>
+        <group ref={group} onClick={(e) => { e.stopPropagation(); onClick(); }}>
             <mesh>
                 <boxGeometry args={[18, 10, 6]} />
-                <meshStandardMaterial color={vehicle.road.includes('RA') ? '#60a5fa' : '#f87171'} />
+                <meshStandardMaterial
+                    color={isSelected ? '#fbbf24' : (vehicle.road.includes('RA') ? '#60a5fa' : '#f87171')}
+                    emissive={isSelected ? '#fbbf24' : '#000000'}
+                    emissiveIntensity={isSelected ? 0.5 : 0}
+                />
             </mesh>
 
-            {/* Dynamic Thought Bubble */}
+            {/* Selection Ring */}
+            {isSelected && (
+                <mesh position={[0, 0, -3]}>
+                    <ringGeometry args={[12, 14, 32]} />
+                    <meshBasicMaterial color="#fbbf24" transparent opacity={0.6} side={THREE.DoubleSide} />
+                </mesh>
+            )}
+
             <Text
                 position={[0, 18, 0]}
                 fontSize={7}
@@ -33,7 +44,6 @@ function Vehicle({ vehicle }) {
                 {vehicle.thought || "Cruising"}
             </Text>
 
-            {/* Decision Ray (Forward direction) */}
             <mesh position={[12, 0, 0]}>
                 <boxGeometry args={[4, 2, 2]} />
                 <meshStandardMaterial color="white" emissive="white" emissiveIntensity={2} />
@@ -98,11 +108,14 @@ function VehiclePath({ path }) {
     );
 }
 
-export function TrafficMap({ state, map }) {
+export function TrafficMap({ state, map, onSelectVehicle, selectedId }) {
     return (
-        <Canvas camera={{ position: [500, -500, 1000], fov: 45 }}>
-            <ambientLight intensity={0.5} />
-            <pointLight position={[1000, 1000, 1000]} />
+        <Canvas camera={{ position: [800, -800, 800], fov: 45 }}>
+            <color attach="background" args={['#020617']} />
+            <fog attach="fog" args={['#020617', 500, 2500]} />
+            <ambientLight intensity={0.4} />
+            <spotLight position={[1000, 1000, 1000]} angle={0.15} penumbra={1} intensity={1} castShadow />
+            <pointLight position={[-500, -500, -500]} intensity={0.5} color="#3b82f6" />
 
             {/* Roads */}
             {map.roads.map(r => (
@@ -116,11 +129,23 @@ export function TrafficMap({ state, map }) {
 
             {/* Vehicles */}
             {state.vehicles.map(v => (
-                <Vehicle key={v.id} vehicle={v} />
+                <Vehicle
+                    key={v.id}
+                    vehicle={v}
+                    isSelected={v.id === selectedId}
+                    onClick={() => onSelectVehicle(v)}
+                />
             ))}
 
-            <OrbitControls enableRotate={false} panSpeed={2} />
-            <gridHelper args={[2000, 50, "#1e293b", "#0f172a"]} rotation={[Math.PI / 2, 0, 0]} />
+            <OrbitControls
+                enableRotate={true}
+                enableDamping={true}
+                dampingFactor={0.05}
+                maxPolarAngle={Math.PI / 2.1}
+                minDistance={100}
+                maxDistance={1500}
+            />
+            <gridHelper args={[4000, 80, "#1e293b", "#0f172a"]} rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -1]} />
         </Canvas>
     );
 }

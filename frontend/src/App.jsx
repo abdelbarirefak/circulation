@@ -6,6 +6,15 @@ import './App.css';
 
 function App() {
   const { state, map } = useTrafficStream();
+  const [selectedVehicle, setSelectedVehicle] = React.useState(null);
+
+  const handleControl = (type, value) => {
+    fetch('http://localhost:3001/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, value })
+    });
+  };
 
   return (
     <div className="app-container">
@@ -13,7 +22,7 @@ function App() {
       <div className="sidebar">
         <div className="sidebar-header">
           <ShieldCheck className="text-blue-400 w-8 h-8" />
-          <h1 className="logo-text">TRAFFIC CTRL</h1>
+          <h1 className="logo-text">DIGITAL TWIN</h1>
         </div>
 
         <div className="metrics-grid">
@@ -38,19 +47,32 @@ function App() {
           />
         </div>
 
-        {/* Mini Performance Graph (SVG) */}
-        <div className="performance-box">
-          <div className="logs-title">Performance Trend</div>
-          <svg viewBox="0 0 200 60" className="w-full h-16 mt-2 opacity-50">
-            <path
-              d={`M 0 50 Q 50 ${50 - state.vehicles.length * 5} 100 40 T 200 30`}
-              fill="none"
-              stroke="#3b82f6"
-              strokeWidth="2"
-            />
-            <rect x="0" y="58" width="200" height="2" fill="#1e293b" />
-          </svg>
-        </div>
+        {/* Live Telemetry Panel */}
+        {selectedVehicle && (
+          <div className="telemetry-panel">
+            <h2 className="panel-title">LIVE TELEMETRY: {selectedVehicle.id}</h2>
+            <div className="telemetry-grid">
+              <div className="tel-item">
+                <span className="tel-label">SPEED:</span>
+                <span className="tel-value">{(selectedVehicle.speed * 3.6).toFixed(1)} km/h</span>
+              </div>
+              <div className="tel-item">
+                <span className="tel-label">ROAD:</span>
+                <span className="tel-value">{selectedVehicle.road}</span>
+              </div>
+              <div className="tel-item">
+                <span className="tel-label">DECISION:</span>
+                <span className="tel-value text-blue-400">{selectedVehicle.thought}</span>
+              </div>
+            </div>
+            <div className="performance-box mt-4">
+              <div className="logs-title">Path Confidence</div>
+              <div className="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
+                <div className="bg-blue-500 h-full w-[85%]"></div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="logs-container">
           <h2 className="logs-title">System Telemetry</h2>
@@ -68,11 +90,24 @@ function App() {
       {/* Main Viewport */}
       <div className="viewport-container">
         <div className="overlay-info">
-          <div className="overlay-subtitle">REAL-TIME VISUALIZATION</div>
-          <div className="overlay-title">Smart-Circulation Engine v4.0</div>
+          <div className="overlay-subtitle">DIGITAL TWIN VISUALIZATION</div>
+          <div className="overlay-title">Smart-Circulation Cloud v5.0</div>
         </div>
 
-        <TrafficMap state={state} map={map} />
+        {/* Simulation Control Bar */}
+        <div className="control-bar">
+          <button className="ctrl-btn" onClick={() => handleControl('pause')}>PAUSE</button>
+          <button className="ctrl-btn" onClick={() => handleControl('resume')}>RESUME</button>
+          <button className="ctrl-btn" onClick={() => handleControl('speed', 2.0)}>2X SPEED</button>
+          <button className="ctrl-btn inject" onClick={() => handleControl('incident', { x: 500, y: 500 })}>INJECT INCIDENT</button>
+        </div>
+
+        <TrafficMap
+          state={state}
+          map={map}
+          onSelectVehicle={setSelectedVehicle}
+          selectedId={selectedVehicle?.id}
+        />
       </div>
     </div>
   );
