@@ -4,6 +4,7 @@ import jade.core.Agent;
 import jade.core.behaviours.TickerBehaviour;
 import jade.lang.acl.ACLMessage;
 import com.traffic.model.Position;
+import com.traffic.environment.Environment;
 
 public abstract class BaseTrafficAgent extends Agent {
     protected Position position;
@@ -15,10 +16,14 @@ public abstract class BaseTrafficAgent extends Agent {
     protected void setup() {
         initializeProperties();
 
-        addBehaviour(new jade.core.behaviours.TickerBehaviour(this, 50) {
+        addBehaviour(new TickerBehaviour(this, 50) {
             @Override
             protected void onTick() {
                 perceive();
+                decide();
+                // Synchronize state with environment
+                Environment.getInstance().updateVehicleState(getLocalName(), position, null, speed, null, null);
+
                 ACLMessage msg = receive();
                 while (msg != null) {
                     handleMessage(msg);

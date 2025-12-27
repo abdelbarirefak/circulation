@@ -12,6 +12,8 @@ public class PerceptionData {
     private Optional<Obstacle> leftBehind = Optional.empty();
     private Optional<Obstacle> rightBehind = Optional.empty();
     private Optional<LightInfo> trafficLight = Optional.empty();
+    private boolean incidentAhead = false;
+    private boolean emergencyBrake = false;
 
     public static class Obstacle {
         public String name;
@@ -86,5 +88,21 @@ public class PerceptionData {
 
     public void setTrafficLight(LightInfo l) {
         this.trafficLight = Optional.of(l);
+    }
+
+    public boolean isIncidentAhead() {
+        return incidentAhead;
+    }
+
+    public void setIncidentAhead(boolean incidentAhead) {
+        this.incidentAhead = incidentAhead;
+    }
+
+    public boolean isEmergencyBrake() {
+        return emergencyBrake;
+    }
+
+    public void setEmergencyBrake(boolean emergencyBrake) {
+        this.emergencyBrake = emergencyBrake;
     }
 }

@@ -1,36 +1,56 @@
 package com.traffic.agents;
 
-import jade.core.Agent;
-import jade.core.behaviours.OneShotBehaviour;
+import jade.core.behaviours.WakerBehaviour;
+import jade.lang.acl.ACLMessage;
 import com.traffic.environment.Environment;
 import com.traffic.model.Position;
 
-public class IncidentAgent extends Agent {
+public class IncidentAgent extends BaseTrafficAgent {
     private String roadId;
-    private double x, y;
     private long duration;
 
-    protected void setup() {
+    @Override
+    protected void initializeProperties() {
         Object[] args = getArguments();
-        if (args != null && args.length >= 4) {
-            roadId = args[0].toString();
-            x = Double.parseDouble(args[1].toString());
-            y = Double.parseDouble(args[2].toString());
-            duration = Long.parseLong(args[3].toString());
+        if (args != null && args.length >= 3) {
+            double x = Double.parseDouble(args[0].toString());
+            double y = Double.parseDouble(args[1].toString());
+            roadId = args[2].toString();
+            duration = (args.length >= 4) ? Long.parseLong(args[3].toString()) : 60000;
+            position = new Position(x, y);
+        } else {
+            position = new Position(0, 0);
+            roadId = "R1";
+            duration = 60000;
         }
+        speed = 1.0; // Minimal speed for rendering
+        direction = 0;
+        perceptionRadius = 0;
 
-        System.out.println("INCIDENT DEPLOYED on " + roadId + " at (" + x + "," + y + ")");
+        Environment.getInstance().addIncident(roadId, position, duration);
 
-        final Environment.Incident incident = new Environment.Incident(roadId, new Position(x, y), duration);
-        Environment.getInstance().addIncident(incident);
-
-        addBehaviour(new jade.core.behaviours.WakerBehaviour(this, duration) {
+        addBehaviour(new WakerBehaviour(this, duration) {
             @Override
-            protected void onWake() {
-                Environment.getInstance().removeIncident(incident);
-                System.out.println("INCIDENT CLEARED on " + roadId);
-                doDelete();
+            protected void handleElapsedTimeout() {
+                myAgent.doDelete();
             }
         });
+    }
+
+    @Override
+    protected void perceive() {
+    }
+
+    @Override
+    protected void handleMessage(ACLMessage msg) {
+    }
+
+    @Override
+    protected void decide() {
+    }
+
+    @Override
+    protected void takeDown() {
+        Environment.getInstance().removeIncident(roadId, position);
     }
 }

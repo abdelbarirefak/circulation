@@ -1,41 +1,35 @@
 package com.traffic.agents;
 
 import jade.lang.acl.ACLMessage;
+import jade.core.AID;
 import com.traffic.environment.Environment;
 import com.traffic.model.*;
 
 public class TrafficLightAgent extends BaseTrafficAgent {
     private LightState currentState = LightState.RED;
-    private String targetRoadId; // The road this light monitors
+    private String targetRoadId;
     private long lastSwitchTime;
-
     private int currentGreenDuration = 10000;
     private final int YELLOW_DURATION = 3000;
     private final int MIN_GREEN = 5000;
     private final int MAX_GREEN = 40000;
-
-    // RL Parameters (Simplified Q-Learning)
-    private double[][] qTable = new double[3][3]; // States: [DensityLow, Med, High] x Actions: [Shorten, Keep, Extend]
+    private double[][] qTable = new double[3][3];
     private final double LEARNING_RATE = 0.1;
     private final double DISCOUNT = 0.9;
     private int lastState = 0;
     private int lastAction = 1;
-
     private Intersection myIntersection;
 
     @Override
     protected void initializeProperties() {
         Object[] args = getArguments();
         if (args != null && args.length >= 3) {
-            double x = Double.parseDouble(args[0].toString());
-            double y = Double.parseDouble(args[1].toString());
-            position = new Position(x, y);
+            position = new Position(Double.parseDouble(args[0].toString()), Double.parseDouble(args[1].toString()));
             targetRoadId = args[2].toString();
         } else {
             position = new Position(0, 0);
             targetRoadId = "R1";
         }
-
         lastSwitchTime = System.currentTimeMillis();
         speed = 0;
         direction = 0;
@@ -48,24 +42,22 @@ public class TrafficLightAgent extends BaseTrafficAgent {
         if (myIntersection == null)
             findMyIntersection();
 
-        // 1. Calculate Reward (Negative total waiting time/queue length)
-        int totalQueue = 0;
         int targetQueue = env.countVehiclesOnRoad(targetRoadId);
-        for (RoadSegment incoming : myIntersection.getIncomingRoads()) {
-            totalQueue += env.countVehiclesOnRoad(incoming.getId());
+        int totalQueue = 0;
+        if (myIntersection != null) {
+            for (RoadSegment incoming : myIntersection.getIncomingRoads()) {
+                totalQueue += env.countVehiclesOnRoad(incoming.getId());
+            }
         }
-        double reward = -totalQueue;
 
-        // 2. Perform RL Update (on transition from GREEN back to RED)
-        // For simplicity, we update based on how the previous green duration worked
+        double reward = -totalQueue;
         if (lastState != -1) {
             double oldQ = qTable[lastState][lastAction];
             qTable[lastState][lastAction] = oldQ + LEARNING_RATE * (reward + DISCOUNT * 0 - oldQ);
         }
 
-        // 3. Decide new Action based on current density state
         int densityState = categorizeDensity(targetQueue);
-        int action = selectAction(densityState); // 0: -3s, 1: 0, 2: +3s
+        int action = selectAction(densityState);
 
         if (action == 0)
             currentGreenDuration = Math.max(MIN_GREEN, currentGreenDuration - 3000);
@@ -97,10 +89,8 @@ public class TrafficLightAgent extends BaseTrafficAgent {
     }
 
     private int selectAction(int state) {
-        // Epsilon-Greedy
         if (Math.random() < 0.1)
             return (int) (Math.random() * 3);
-
         int best = 1;
         for (int a = 0; a < 3; a++) {
             if (qTable[state][a] > qTable[state][best])
@@ -112,11 +102,8 @@ public class TrafficLightAgent extends BaseTrafficAgent {
     @Override
     protected void handleMessage(ACLMessage msg) {
         if (msg.getPerformative() == ACLMessage.REQUEST && msg.getContent().equals("PRIORITY_PASS")) {
-            System.out.println(getLocalName() + " RECEIVED PRIORITY REQUEST. OVERRIDING CYCLE.");
-            if (currentState != LightState.GREEN) {
+            if (currentState != LightState.GREEN)
                 switchTo(LightState.GREEN);
-            }
-            // Reset timer and ensure long enough for emergency vehicle (e.g., 8s extra)
             lastSwitchTime = System.currentTimeMillis() + 8000;
         }
     }
@@ -124,41 +111,30 @@ public class TrafficLightAgent extends BaseTrafficAgent {
     @Override
     protected void decide() {
         long elapsed = System.currentTimeMillis() - lastSwitchTime;
-
         switch (currentState) {
             case RED:
-                // Red time could also be adaptive, but for now fixed 10s
-                if (elapsed > 10000) {
+                if (elapsed > 10000)
                     switchTo(LightState.GREEN);
-                }
                 break;
             case GREEN:
-                if (elapsed > currentGreenDuration) {
+                if (elapsed > currentGreenDuration)
                     switchTo(LightState.YELLOW);
-                }
                 break;
             case YELLOW:
-                if (elapsed > YELLOW_DURATION) {
+                if (elapsed > YELLOW_DURATION)
                     switchTo(LightState.RED);
-                }
                 break;
         }
-
         Environment.getInstance().updateLightState(getLocalName(), position, currentState);
     }
 
     private void switchTo(LightState next) {
         currentState = next;
         lastSwitchTime = System.currentTimeMillis();
-        System.out
-                .println(getLocalName() + " switched to " + next + " (Green duration: " + currentGreenDuration + "ms)");
-
-        // Broadcast state change to nearby vehicles
         ACLMessage inform = new ACLMessage(ACLMessage.INFORM);
         inform.setContent(currentState.toString());
-        // For simplicity, we broadcast to all, but agents filter by position
         for (String agentName : Environment.getInstance().getVehiclePositions().keySet()) {
-            inform.addReceiver(new jade.core.AID(agentName, jade.core.AID.ISLOCALNAME));
+            inform.addReceiver(new AID(agentName, AID.ISLOCALNAME));
         }
         send(inform);
     }

@@ -42,10 +42,11 @@ public class Pathfinder {
                 if (v == null)
                     continue;
 
-                // Weight = physical length * (1 + congestion factor)
+                // Weight = physical length * (1 + congestion factor) + yield friction
                 int vehicleCount = com.traffic.environment.Environment.getInstance().countVehiclesOnRoad(road.getId());
                 double congestionFactor = vehicleCount * 0.5; // Each car adds 50% "virtual length"
-                double weight = road.getLength() * (1.0 + congestionFactor);
+                double yieldFriction = road.isYieldTarget() ? 50.0 : 0.0; // Entering roundabout adds "cost"
+                double weight = (road.getLength() + yieldFriction) * (1.0 + congestionFactor);
 
                 double newDist = dist.get(u) + weight;
                 if (newDist < dist.get(v)) {

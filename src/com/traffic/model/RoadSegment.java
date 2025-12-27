@@ -10,6 +10,7 @@ public class RoadSegment {
 
     private Position controlPoint; // For Quadratic Bezier curves
     private boolean isCurved = false;
+    private boolean isYieldTarget = false; // For roundabout yielding
 
     public RoadSegment(String id, Position start, Position end, int lanes, double speedLimit, boolean isOneWay) {
         this.id = id;
@@ -107,5 +108,13 @@ public class RoadSegment {
 
     public Position getControlPoint() {
         return controlPoint;
+    }
+
+    public boolean isYieldTarget() {
+        return isYieldTarget;
+    }
+
+    public void setYieldTarget(boolean yieldTarget) {
+        isYieldTarget = yieldTarget;
     }
 }

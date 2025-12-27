@@ -13,6 +13,8 @@ public class Environment {
     // Physical state
     private Map<String, Position> vehiclePositions = new ConcurrentHashMap<>();
     private Map<String, String> vehicleRoads = new ConcurrentHashMap<>();
+    private Map<String, String> vehicleThoughts = new ConcurrentHashMap<>();
+    private Map<String, List<Position>> vehiclePaths = new ConcurrentHashMap<>();
     private Map<String, Double> vehicleAccels = new ConcurrentHashMap<>();
     private Map<String, LightState> lightStates = new ConcurrentHashMap<>();
     private Map<String, Position> lightPositions = new ConcurrentHashMap<>();
@@ -84,11 +86,16 @@ public class Environment {
     }
 
     // Dynamic State Management
-    public void updateVehiclePosition(String name, Position pos, String roadId, double accel) {
+    public void updateVehicleState(String name, Position pos, String roadId, double accel, String thought,
+            List<Position> path) {
         vehiclePositions.put(name, pos);
         if (roadId != null)
             vehicleRoads.put(name, roadId);
         vehicleAccels.put(name, accel);
+        if (thought != null)
+            vehicleThoughts.put(name, thought);
+        if (path != null)
+            vehiclePaths.put(name, path);
     }
 
     public void removeVehicle(String name) {
@@ -99,6 +106,14 @@ public class Environment {
 
     public String getVehicleRoadId(String name) {
         return vehicleRoads.get(name);
+    }
+
+    public String getVehicleThought(String name) {
+        return vehicleThoughts.getOrDefault(name, "Cruising");
+    }
+
+    public List<Position> getVehiclePath(String name) {
+        return vehiclePaths.getOrDefault(name, new ArrayList<>());
     }
 
     public void updateLightState(String name, Position pos, LightState state) {

@@ -3,98 +3,146 @@ import jade.core.ProfileImpl;
 import jade.core.Runtime;
 import jade.wrapper.AgentContainer;
 import jade.wrapper.AgentController;
-import com.traffic.gui.SimulationWindow;
 import com.traffic.environment.Environment;
 import com.traffic.model.*;
+import com.sun.net.httpserver.HttpServer;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.util.stream.Collectors;
 
 public class Main {
         public static void main(String[] args) {
                 // 1. Setup Map Network
                 Environment env = Environment.getInstance();
 
-                // Road 1: Left to Right (Incoming to I1)
-                RoadSegment road1 = new RoadSegment("R1", new Position(50, 200), new Position(500, 200), 2, 5.0, true);
-                // Road 4: Top to Bottom (Incoming to I1)
-                RoadSegment road4 = new RoadSegment("R4", new Position(500, -50), new Position(500, 200), 2, 5.0, true);
+                // Roads
+                RoadSegment r1 = new RoadSegment("R1", new Position(0, 300), new Position(300, 300), 2, 50, true);
+                RoadSegment r2 = new RoadSegment("R2", new Position(300, 300), new Position(300, 600), 2, 50, true);
 
-                // Road 2: Vertical down from intersection (Outgoing)
-                RoadSegment road2 = new RoadSegment("R2", new Position(500, 200), new Position(500, 500), 2, 4.0, true);
-                // Road 3: Right to Left from intersection (Outgoing)
-                RoadSegment road3 = new RoadSegment("R3", new Position(500, 200), new Position(900, 200), 2, 6.0, true);
-
-                Intersection inter = new Intersection("I1", new Position(500, 200));
-                inter.addIncoming(road1);
-                inter.addIncoming(road4);
-                inter.addOutgoing(road2);
-                inter.addOutgoing(road3);
-
-                env.addRoad(road1);
-                env.addRoad(road2);
-                env.addRoad(road3);
-                env.addRoad(road4);
-                env.addIntersection(inter);
-
-                // 2. Start GUI
-                new SimulationWindow();
-
-                // Create Roads
-                env.addRoad(new RoadSegment("R1", new Position(0, 300), new Position(300, 300), 2, 50, true));
-                env.addRoad(new RoadSegment("R2", new Position(300, 300), new Position(300, 600), 2, 50, true));
-
-                // Curved Road Segment (Bezier: R3 connects R1-end to RA1 boundary)
-                env.addRoad(new RoadSegment("R3_Curve",
+                RoadSegment r3Curve = new RoadSegment("R3_Curve",
                                 new Position(300, 300),
-                                new Position(500 - 70.7, 500 - 70.7), // End on circle boundary (45 deg)
-                                new Position(500 - 70.7, 300), // Control Point
-                                2, 40, true));
+                                new Position(500 - 70.7, 500 - 70.7),
+                                new Position(500 - 70.7, 300),
+                                2, 40, true);
 
-                // Central Roundabout
+                RoadSegment r4toRA = new RoadSegment("R4_to_RA", new Position(500, 300), new Position(500, 400), 2, 30,
+                                true);
+                r4toRA.setYieldTarget(true); // Entry priority
+
+                RoadSegment r5fromRA = new RoadSegment("R5_from_RA", new Position(600, 500), new Position(800, 500), 2,
+                                30, true);
+                RoadSegment r6fromRA = new RoadSegment("R6_from_RA", new Position(500, 600), new Position(500, 800), 2,
+                                30, true);
+
+                env.addRoad(r1);
+                env.addRoad(r2);
+                env.addRoad(r3Curve);
+                env.addRoad(r4toRA);
+                env.addRoad(r5fromRA);
+                env.addRoad(r6fromRA);
+
+                // Roundabout
                 Roundabout ra = new Roundabout("RA1", new Position(500, 500), 100);
                 env.addRoundabout(ra);
 
-                // Roads connecting to Roundabout
-                env.addRoad(new RoadSegment("R4_to_RA", new Position(500, 500 - 200), new Position(500, 500 - 100), 2,
-                                30, true));
-                env.addRoad(new RoadSegment("R5_from_RA", new Position(500 + 100, 500), new Position(500 + 300, 500), 2,
-                                30, true));
-
-                // Add a south-connecting road for symmetry
-                env.addRoad(new RoadSegment("R6_from_RA", new Position(500, 500 + 100), new Position(500, 500 + 300), 2,
-                                30, true));
-
                 // Intersections
                 Intersection i1 = new Intersection("I1", new Position(300, 300));
-                i1.addIncoming(env.getRoads().get("R1"));
-                i1.addOutgoing(env.getRoads().get("R2"));
-                i1.addOutgoing(env.getRoads().get("R3_Curve"));
+                i1.addIncoming(r1);
+                i1.addOutgoing(r2);
+                i1.addOutgoing(r3Curve);
                 env.addIntersection(i1);
+
+                // 2. Start API Server (Modern Dashboard Bridge)
+                startApiServer(env);
 
                 // 3. Initialize JADE
                 Runtime rt = Runtime.instance();
                 Profile p = new ProfileImpl();
                 AgentContainer mainContainer = rt.createMainContainer(p);
 
-                // Agents
                 try {
-                        // Traffic Lights
-                        AgentController t1 = mainContainer.createNewAgent("TL_R1_I1",
-                                        "com.traffic.agents.TrafficLightAgent",
-                                        new Object[] { "290", "300", "R1" });
-                        t1.start();
-
-                        // Spawner (Updated for 5-vehicle limit)
-                        AgentController spawner = mainContainer.createNewAgent("Spawner",
-                                        "com.traffic.agents.VehicleSpawnerAgent",
-                                        null);
-                        spawner.start();
-
-                        // Metrics agent
-                        AgentController metrics = mainContainer.createNewAgent("Metrics",
-                                        "com.traffic.agents.MetricsAgent", null);
-                        metrics.start();
-
+                        mainContainer.createNewAgent("TL_R1_I1", "com.traffic.agents.TrafficLightAgent",
+                                        new Object[] { "290", "300", "R1" }).start();
+                        mainContainer.createNewAgent("Spawner", "com.traffic.agents.VehicleSpawnerAgent", null).start();
+                        mainContainer.createNewAgent("Metrics", "com.traffic.agents.MetricsAgent", null).start();
                 } catch (Exception e) {
                         e.printStackTrace();
                 }
+        }
+
+        private static void startApiServer(Environment env) {
+                try {
+                        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+
+                        // Endpoint: Simulation State (SSE)
+                        server.createContext("/api/stream", exchange -> {
+                                exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+                                exchange.getResponseHeaders().add("Cache-Control", "no-cache");
+                                exchange.getResponseHeaders().add("Connection", "keep-alive");
+                                exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+                                exchange.sendResponseHeaders(200, 0);
+
+                                try {
+                                        OutputStream os = exchange.getResponseBody();
+                                        while (true) {
+                                                String stateJson = serializeState(env);
+                                                os.write(("data: " + stateJson + "\n\n").getBytes());
+                                                os.flush();
+                                                Thread.sleep(100); // 10Hz Update
+                                        }
+                                } catch (InterruptedException e) {
+                                        Thread.currentThread().interrupt();
+                                }
+                        });
+
+                        // Endpoint: Static Map
+                        server.createContext("/api/map", exchange -> {
+                                String mapJson = serializeMap(env);
+                                byte[] response = mapJson.getBytes();
+                                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                                exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+                                exchange.sendResponseHeaders(200, response.length);
+                                exchange.getResponseBody().write(response);
+                                exchange.getResponseBody().close();
+                        });
+
+                        server.start();
+                        System.out.println("API Bridge started at http://localhost:8080");
+                } catch (Exception e) {
+                        e.printStackTrace();
+                }
+        }
+
+        private static String serializeState(Environment env) {
+                StringBuilder sb = new StringBuilder("{ \"vehicles\": [");
+                sb.append(env.getVehiclePositions().entrySet().stream().map(entry -> {
+                        String id = entry.getKey();
+                        Position pos = entry.getValue();
+                        String thought = env.getVehicleThought(id);
+                        String pathJson = env.getVehiclePath(id).stream()
+                                        .map(p -> String.format("[%f, %f]", p.getX(), p.getY()))
+                                        .collect(Collectors.joining(", ", "[", "]"));
+
+                        return String.format(
+                                        "{ \"id\": \"%s\", \"x\": %.2f, \"y\": %.2f, \"lane\": %d, \"road\": \"%s\", \"thought\": \"%s\", \"path\": %s }",
+                                        id, pos.getX(), pos.getY(), 0, env.getVehicleRoadId(id), thought, pathJson);
+                }).collect(Collectors.joining(",")));
+                sb.append("] }");
+                return sb.toString();
+        }
+
+        private static String serializeMap(Environment env) {
+                StringBuilder sb = new StringBuilder("{ \"roads\": [");
+                sb.append(env.getRoads().values().stream().map(r -> {
+                        return String.format(
+                                        "{ \"id\": \"%s\", \"startX\": %.2f, \"startY\": %.2f, \"endX\": %.2f, \"endY\": %.2f, \"lanes\": %d }",
+                                        r.getId(), r.getStart().getX(), r.getStart().getY(), r.getEnd().getX(),
+                                        r.getEnd().getY(), r.getLanes());
+                }).collect(Collectors.joining(",")));
+                sb.append("] }");
+                return sb.toString();
         }
 }
