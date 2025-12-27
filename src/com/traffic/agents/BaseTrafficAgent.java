@@ -1,7 +1,7 @@
 package com.traffic.agents;
 
 import jade.core.Agent;
-import jade.core.behaviours.CyclicBehaviour;
+import jade.core.behaviours.TickerBehaviour;
 import jade.lang.acl.ACLMessage;
 import com.traffic.model.Position;
 
@@ -15,9 +15,9 @@ public abstract class BaseTrafficAgent extends Agent {
     protected void setup() {
         initializeProperties();
 
-        addBehaviour(new CyclicBehaviour(this) {
+        addBehaviour(new jade.core.behaviours.TickerBehaviour(this, 50) {
             @Override
-            public void action() {
+            protected void onTick() {
                 perceive();
                 ACLMessage msg = receive();
                 while (msg != null) {
@@ -25,7 +25,6 @@ public abstract class BaseTrafficAgent extends Agent {
                     msg = receive();
                 }
                 decide();
-                block(50);
             }
         });
     }

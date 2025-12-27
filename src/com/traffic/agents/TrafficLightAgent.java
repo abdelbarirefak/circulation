@@ -12,7 +12,16 @@ public class TrafficLightAgent extends BaseTrafficAgent {
     private int currentGreenDuration = 10000;
     private final int YELLOW_DURATION = 3000;
     private final int MIN_GREEN = 5000;
-    private final int MAX_GREEN = 30000;
+    private final int MAX_GREEN = 40000;
+
+    // RL Parameters (Simplified Q-Learning)
+    private double[][] qTable = new double[3][3]; // States: [DensityLow, Med, High] x Actions: [Shorten, Keep, Extend]
+    private final double LEARNING_RATE = 0.1;
+    private final double DISCOUNT = 0.9;
+    private int lastState = 0;
+    private int lastAction = 1;
+
+    private Intersection myIntersection;
 
     @Override
     protected void initializeProperties() {
@@ -35,14 +44,69 @@ public class TrafficLightAgent extends BaseTrafficAgent {
 
     @Override
     protected void perceive() {
-        // Adaptive logic: sense density on the target road
         Environment env = Environment.getInstance();
-        int vehicleCount = env.countVehiclesOnRoad(targetRoadId);
+        if (myIntersection == null)
+            findMyIntersection();
 
-        // Dynamic Green Calculation: 5s base + 3s per vehicle
-        if (currentState == LightState.RED) {
-            currentGreenDuration = Math.min(MAX_GREEN, MIN_GREEN + (vehicleCount * 3000));
+        // 1. Calculate Reward (Negative total waiting time/queue length)
+        int totalQueue = 0;
+        int targetQueue = env.countVehiclesOnRoad(targetRoadId);
+        for (RoadSegment incoming : myIntersection.getIncomingRoads()) {
+            totalQueue += env.countVehiclesOnRoad(incoming.getId());
         }
+        double reward = -totalQueue;
+
+        // 2. Perform RL Update (on transition from GREEN back to RED)
+        // For simplicity, we update based on how the previous green duration worked
+        if (lastState != -1) {
+            double oldQ = qTable[lastState][lastAction];
+            qTable[lastState][lastAction] = oldQ + LEARNING_RATE * (reward + DISCOUNT * 0 - oldQ);
+        }
+
+        // 3. Decide new Action based on current density state
+        int densityState = categorizeDensity(targetQueue);
+        int action = selectAction(densityState); // 0: -3s, 1: 0, 2: +3s
+
+        if (action == 0)
+            currentGreenDuration = Math.max(MIN_GREEN, currentGreenDuration - 3000);
+        else if (action == 2)
+            currentGreenDuration = Math.min(MAX_GREEN, currentGreenDuration + 3000);
+
+        lastState = densityState;
+        lastAction = action;
+    }
+
+    private void findMyIntersection() {
+        Environment env = Environment.getInstance();
+        for (Intersection inter : env.getIntersections().values()) {
+            for (RoadSegment incoming : inter.getIncomingRoads()) {
+                if (incoming.getId().equals(targetRoadId)) {
+                    myIntersection = inter;
+                    return;
+                }
+            }
+        }
+    }
+
+    private int categorizeDensity(int count) {
+        if (count < 3)
+            return 0;
+        if (count < 8)
+            return 1;
+        return 2;
+    }
+
+    private int selectAction(int state) {
+        // Epsilon-Greedy
+        if (Math.random() < 0.1)
+            return (int) (Math.random() * 3);
+
+        int best = 1;
+        for (int a = 0; a < 3; a++) {
+            if (qTable[state][a] > qTable[state][best])
+                best = a;
+        }
+        return best;
     }
 
     @Override

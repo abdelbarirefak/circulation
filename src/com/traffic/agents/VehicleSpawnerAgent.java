@@ -31,6 +31,13 @@ public class VehicleSpawnerAgent extends Agent {
                     int nextPeriod = (int) (5000 - (cycle * 4000));
                     reset(nextPeriod);
 
+                    com.traffic.environment.Environment env = com.traffic.environment.Environment.getInstance();
+                    int activeVehicles = env.getVehiclePositions().size();
+
+                    if (activeVehicles >= 5) {
+                        return; // Global limit enforced
+                    }
+
                     vehicleCount++;
                     String[] profiles = { "CAUTIOUS", "NORMAL", "AGGRESSIVE" };
                     String profile = profiles[(int) (Math.random() * profiles.length)];
@@ -39,7 +46,6 @@ public class VehicleSpawnerAgent extends Agent {
                     double randomOffsetY = (Math.random() - 0.5) * 5;
 
                     int lane = (int) (Math.random() * 2);
-                    com.traffic.environment.Environment env = com.traffic.environment.Environment.getInstance();
 
                     // Choose a random destination intersection
                     String destInter = null;
@@ -48,10 +54,15 @@ public class VehicleSpawnerAgent extends Agent {
                         destInter = inters[(int) (Math.random() * inters.length)].toString();
                     }
 
-                    // Decide agent type: 5% chance for emergency vehicle
+                    // Decide agent type: 10% Bus, 5% Emergency, 85% Regular
                     String agentClass = "com.traffic.agents.VehicleAgent";
                     String namePrefix = "Auto_Veh_";
-                    if (Math.random() < 0.05) {
+                    double rand = Math.random();
+                    if (rand < 0.10) {
+                        agentClass = "com.traffic.agents.PublicTransportAgent";
+                        namePrefix = "Bus_";
+                        profile = "NORMAL";
+                    } else if (rand < 0.15) {
                         agentClass = "com.traffic.agents.EmergencyVehicleAgent";
                         profile = "AGGRESSIVE";
                         namePrefix = "Emerg_Veh_";

@@ -1,17 +1,21 @@
 package com.traffic.agents;
 
-import jade.lang.acl.ACLMessage;
-import jade.core.AID;
-import com.traffic.environment.Environment;
-import com.traffic.model.*;
-import com.traffic.logic.Pathfinder;
 import java.util.List;
 import java.util.Optional;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
+import jade.lang.acl.ACLMessage;
+import jade.core.AID;
+import jade.core.Agent;
+import com.traffic.environment.Environment;
+import com.traffic.model.*;
+import com.traffic.logic.Pathfinder;
 
 public class VehicleAgent extends BaseTrafficAgent {
     private String currentRoadId;
     private int lane;
+    private double progress; // Distance along current road
     private DrivingProfile profile;
     private String destinationInterId;
     private List<String> plannedPath;
@@ -148,14 +152,22 @@ public class VehicleAgent extends BaseTrafficAgent {
                         angleDiff = 2 * Math.PI - angleDiff;
 
                     if (angleDiff < Math.PI / 4) {
-                        // Mark as obstacle or handle directly
+                        // HAZARD WARNING: Broadcast to 500m radius
                         if (dist < 100.0) {
-                            speed = Math.max(2.0, speed * 0.7); // Congestion effect
+                            speed = Math.max(2.0, speed * 0.7);
+                            // Broadcast hazard warning once every 2s
+                            if (System.currentTimeMillis() % 2000 < 100) {
+                                broadcastHazard(500.0);
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    private void broadcastHazard(double radius) {
+        broadcastV2V(ACLMessage.INFORM, "HAZARD_AHEAD", false, null);
     }
 
     @Override
@@ -184,9 +196,18 @@ public class VehicleAgent extends BaseTrafficAgent {
                         // Anti-collision reaction: slow down immediately
                         speed = Math.max(0, speed - profile.getBrakeRate() * 1.5);
                     }
+                } else if (content.startsWith("HAZARD_AHEAD")) {
+                    // Proactive rerouting before seeing the incident
+                    System.out.println(getLocalName() + " received HAZARD warning. Proactively rerouting...");
+                    triggerReroute();
+                } else if (content.startsWith("CACC_DATA")
+                        && msg.getUserDefinedParameter("lane").equals(String.valueOf(lane))) {
+                    // CACC: Adjust speed based on lead vehicle's current acceleration/braking
+                    double leadAccel = Double.parseDouble(msg.getUserDefinedParameter("accel"));
+                    speed = Math.max(0, speed + leadAccel * 0.8); // Follow lead's intent
                 } else if (content.startsWith("CONGESTION")) {
                     // Trigger a reroute check if we are on a congested road
-                    if (Math.random() < 0.3) { // 30% chance to react and change path
+                    if (Math.random() < 0.3) {
                         triggerReroute();
                     }
                 }
@@ -198,9 +219,10 @@ public class VehicleAgent extends BaseTrafficAgent {
         }
     }
 
-    private void broadcastV2V(int performative, String content, boolean includePos) {
+    private void broadcastV2V(int performative, String content, boolean includePos, Map<String, String> params) {
         Environment env = Environment.getInstance();
-        List<String> nearby = env.getNearbyAgents(position, 200.0, getLocalName());
+        double radius = content.startsWith("HAZARD") ? 500.0 : 200.0;
+        List<String> nearby = env.getNearbyAgents(position, radius, getLocalName());
         if (nearby.isEmpty())
             return;
 
@@ -209,6 +231,11 @@ public class VehicleAgent extends BaseTrafficAgent {
         if (includePos) {
             msg.addUserDefinedParameter("x", String.valueOf(position.getX()));
             msg.addUserDefinedParameter("y", String.valueOf(position.getY()));
+        }
+        if (params != null) {
+            for (Map.Entry<String, String> entry : params.entrySet()) {
+                msg.addUserDefinedParameter(entry.getKey(), entry.getValue());
+            }
         }
 
         for (String name : nearby) {
@@ -231,19 +258,25 @@ public class VehicleAgent extends BaseTrafficAgent {
 
         boolean shouldBrake = false;
         double prevSpeed = speed;
+        double accel = 0;
 
-        // 1. Check Lead Vehicle (ACC Logics)
+        // 1. Check Lead Vehicle (IDM-lite: Proportional Braking)
         if (perceptionData.getLeadVehicle().isPresent()) {
-            double dist = perceptionData.getLeadVehicle().get().distance;
-            if (dist < currentSafetyRadius) {
-                shouldBrake = true;
-                // Opportunistic Lane Changing
-                tryLaneChange(road);
+            PerceptionData.Obstacle lead = perceptionData.getLeadVehicle().get();
+            double leadDist = lead.distance;
 
-                // Rerouting logic: if stuck, try finding a better path
-                if (speed < 0.5 && Math.random() < 0.05) {
-                    triggerReroute();
-                }
+            // Dynamic Safety Distance: 1.5s gap + 20px constant buffer
+            double safeGap = (speed * 1.5) + 20.0;
+
+            if (leadDist < safeGap) {
+                shouldBrake = true;
+                // Proportional Deceleration: the closer we are, the harder we brake
+                double gapRatio = (safeGap - leadDist) / safeGap;
+                accel = -profile.getBrakeRate() * (0.5 + gapRatio);
+
+                // Opportunistic Lane Changing if stuck
+                if (leadDist < 30.0)
+                    tryLaneChange(road);
             }
         }
 
@@ -255,21 +288,60 @@ public class VehicleAgent extends BaseTrafficAgent {
             }
         }
 
-        // 3. Acceleration / Braking
+        // 3. Acceleration / Braking Application
         if (shouldBrake) {
-            speed = Math.max(0, speed - profile.getBrakeRate());
-            // Sudden braking alert if we lose significant speed
-            if (prevSpeed - speed > 1.0) {
-                broadcastV2V(ACLMessage.INFORM, "BRAKING", true);
+            // Apply calculated deceleration (or default if not set by IDM)
+            if (accel == 0)
+                accel = -profile.getBrakeRate();
+            speed = Math.max(0, speed + accel);
+
+            if (prevSpeed - speed > 0.5) {
+                broadcastV2V(ACLMessage.INFORM, "BRAKING", true, null);
             }
         } else {
-            speed = Math.min(currentMaxSpeed, speed + profile.getAccelRate());
+            accel = profile.getAccelRate();
+            speed = Math.min(currentMaxSpeed, speed + accel);
         }
 
-        // 4. Update Position with Lane Offset
-        moveWithOffset(road);
+        // CACC Broadcast: Share accel with vehicle behind in same lane
+        if (Math.abs(accel) > 0.01) {
+            Map<String, String> caccParams = new HashMap<>();
+            caccParams.put("accel", String.valueOf(accel));
+            caccParams.put("lane", String.valueOf(lane));
+            broadcastV2V(ACLMessage.INFORM, "CACC_DATA", false, caccParams);
+        }
 
-        env.updateVehiclePosition(getLocalName(), position);
+        // 4. Movement (Progress-based for curves)
+        progress += speed;
+
+        if (road != null) {
+            updatePhysicalPosition(road);
+
+            // Check for road completion
+            if (progress >= road.getLength()) {
+                handleRoadCompletion(road);
+            }
+        }
+
+        env.updateVehiclePosition(getLocalName(), position, currentRoadId, accel);
+    }
+
+    private void updatePhysicalPosition(RoadSegment road) {
+        double t = Math.min(1.0, progress / road.getLength());
+        Position basePos = road.getPointAt(t);
+        double roadAngle = road.getAngleAt(t);
+        double perpAngle = roadAngle + Math.PI / 2.0;
+        double offset = road.getLaneOffset(lane);
+
+        position.setX(basePos.getX() + Math.cos(perpAngle) * offset);
+        position.setY(basePos.getY() + Math.sin(perpAngle) * offset);
+        direction = roadAngle;
+    }
+
+    private void handleRoadCompletion(RoadSegment road) {
+        Environment env = Environment.getInstance();
+        handleIntersectionEntry(env, road); // Existing logic to pick next road
+        progress = 0; // Reset progress for the new road
     }
 
     private void handleIntersectionEntry(Environment env, RoadSegment currentRoad) {
@@ -328,38 +400,34 @@ public class VehicleAgent extends BaseTrafficAgent {
         if (road.getLanes() <= 1)
             return;
 
-        // Request cooperation from neighbors
-        broadcastV2V(ACLMessage.REQUEST, "LANE_COOPERATE", false);
-
-        // Try left then right
-        if (lane > 0 && !perceptionData.getLeftVehicle().isPresent()) {
+        // Check Left
+        if (lane > 0 && isLaneChangeSafe(perceptionData.getLeftVehicle(), perceptionData.getLeftBehind())) {
             lane--;
             position.setLane(lane);
             System.out.println(getLocalName() + " changing to left lane.");
-        } else if (lane < road.getLanes() - 1 && !perceptionData.getRightVehicle().isPresent()) {
+        }
+        // Check Right
+        else if (lane < road.getLanes() - 1
+                && isLaneChangeSafe(perceptionData.getRightVehicle(), perceptionData.getRightBehind())) {
             lane++;
             position.setLane(lane);
             System.out.println(getLocalName() + " changing to right lane.");
         }
     }
 
-    private void moveWithOffset(RoadSegment road) {
-        double roadAngle = road.getAngle();
-        double offset = road.getLaneOffset(lane);
-        double perpAngle = roadAngle + Math.PI / 2.0;
+    private boolean isLaneChangeSafe(Optional<PerceptionData.Obstacle> front,
+            Optional<PerceptionData.Obstacle> behind) {
+        double safeGap = (speed * 1.5) + 20.0;
 
-        // Advance along the road axis
-        position.setX(position.getX() + Math.cos(roadAngle) * speed);
-        position.setY(position.getY() + Math.sin(roadAngle) * speed);
+        // Check front gap in target lane
+        if (front.isPresent() && front.get().distance < safeGap)
+            return false;
 
-        // Smootly align with lane offset (simple P-controller style)
-        double targetX = position.getX() + Math.cos(perpAngle) * offset;
-        double targetY = position.getY() + Math.sin(perpAngle) * offset;
+        // Check behind gap in target lane (avoid cutting someone off)
+        if (behind.isPresent() && behind.get().distance < 30.0)
+            return false;
 
-        // In this simple model, we just re-apply the fixed offset to the raw position
-        // But to make it cleaner, the 'position' stored in Environment should include
-        // the offset
-        // We calculate position as (RoadStart + distanceAlongRoad) + OffsetVector
+        return true;
     }
 
     private void triggerReroute() {
@@ -367,12 +435,18 @@ public class VehicleAgent extends BaseTrafficAgent {
             return; // Once per 5s
 
         Environment env = Environment.getInstance();
+
+        // Metrics-Driven heuristic: Only reroute if current road is worse than average
+        double currentHist = env.getHistoricalCongestion(currentRoadId);
+        if (currentHist < 2.0)
+            return; // Road is fine, don't fluctuate
+
         Intersection nextInter = findNextIntersectionForRoad(env, currentRoadId);
         if (nextInter != null && destinationInterId != null) {
             plannedPath = Pathfinder.findPath(env.getIntersections(), env.getRoads(),
                     nextInter.getId(), destinationInterId);
             lastRerouteTime = System.currentTimeMillis();
-            System.out.println(getLocalName() + " rerouted. Path size: " + plannedPath.size());
+            System.out.println(getLocalName() + " rerouted based on metrics. Current congestion rank: " + currentHist);
         }
     }
 

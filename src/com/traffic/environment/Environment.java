@@ -12,13 +12,17 @@ public class Environment {
 
     // Physical state
     private Map<String, Position> vehiclePositions = new ConcurrentHashMap<>();
+    private Map<String, String> vehicleRoads = new ConcurrentHashMap<>();
+    private Map<String, Double> vehicleAccels = new ConcurrentHashMap<>();
     private Map<String, LightState> lightStates = new ConcurrentHashMap<>();
     private Map<String, Position> lightPositions = new ConcurrentHashMap<>();
 
     // Map structure
     private Map<String, RoadSegment> roads = new ConcurrentHashMap<>();
     private Map<String, Intersection> intersections = new ConcurrentHashMap<>();
+    private Map<String, Roundabout> roundabouts = new ConcurrentHashMap<>();
     private List<Incident> activeIncidents = new ArrayList<>();
+    private Map<String, Double> historicalCongestion = new ConcurrentHashMap<>();
 
     public static class Incident {
         public String roadId;
@@ -71,13 +75,30 @@ public class Environment {
         return intersections;
     }
 
+    public Map<String, Roundabout> getRoundabouts() {
+        return roundabouts;
+    }
+
+    public void addRoundabout(Roundabout ra) {
+        roundabouts.put(ra.getId(), ra);
+    }
+
     // Dynamic State Management
-    public void updateVehiclePosition(String name, Position pos) {
+    public void updateVehiclePosition(String name, Position pos, String roadId, double accel) {
         vehiclePositions.put(name, pos);
+        if (roadId != null)
+            vehicleRoads.put(name, roadId);
+        vehicleAccels.put(name, accel);
     }
 
     public void removeVehicle(String name) {
         vehiclePositions.remove(name);
+        vehicleRoads.remove(name);
+        vehicleAccels.remove(name);
+    }
+
+    public String getVehicleRoadId(String name) {
+        return vehicleRoads.get(name);
     }
 
     public void updateLightState(String name, Position pos, LightState state) {
@@ -87,6 +108,10 @@ public class Environment {
 
     public Map<String, Position> getVehiclePositions() {
         return vehiclePositions;
+    }
+
+    public Map<String, Double> getVehicleAccels() {
+        return vehicleAccels;
     }
 
     public Map<String, LightState> getLightStates() {
@@ -148,5 +173,13 @@ public class Environment {
             }
         }
         return count;
+    }
+
+    public void updateHistoricalCongestion(String roadId, double level) {
+        historicalCongestion.put(roadId, level);
+    }
+
+    public double getHistoricalCongestion(String roadId) {
+        return historicalCongestion.getOrDefault(roadId, 0.0);
     }
 }

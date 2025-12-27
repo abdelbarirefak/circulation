@@ -8,64 +8,93 @@ import com.traffic.environment.Environment;
 import com.traffic.model.*;
 
 public class Main {
-    public static void main(String[] args) {
-        // 1. Setup Map Network
-        Environment env = Environment.getInstance();
+        public static void main(String[] args) {
+                // 1. Setup Map Network
+                Environment env = Environment.getInstance();
 
-        // Road 1: Left to Right (Incoming to I1)
-        RoadSegment road1 = new RoadSegment("R1", new Position(50, 200), new Position(500, 200), 2, 5.0, true);
-        // Road 4: Top to Bottom (Incoming to I1)
-        RoadSegment road4 = new RoadSegment("R4", new Position(500, -50), new Position(500, 200), 2, 5.0, true);
+                // Road 1: Left to Right (Incoming to I1)
+                RoadSegment road1 = new RoadSegment("R1", new Position(50, 200), new Position(500, 200), 2, 5.0, true);
+                // Road 4: Top to Bottom (Incoming to I1)
+                RoadSegment road4 = new RoadSegment("R4", new Position(500, -50), new Position(500, 200), 2, 5.0, true);
 
-        // Road 2: Vertical down from intersection (Outgoing)
-        RoadSegment road2 = new RoadSegment("R2", new Position(500, 200), new Position(500, 500), 2, 4.0, true);
-        // Road 3: Right to Left from intersection (Outgoing)
-        RoadSegment road3 = new RoadSegment("R3", new Position(500, 200), new Position(900, 200), 2, 6.0, true);
+                // Road 2: Vertical down from intersection (Outgoing)
+                RoadSegment road2 = new RoadSegment("R2", new Position(500, 200), new Position(500, 500), 2, 4.0, true);
+                // Road 3: Right to Left from intersection (Outgoing)
+                RoadSegment road3 = new RoadSegment("R3", new Position(500, 200), new Position(900, 200), 2, 6.0, true);
 
-        Intersection inter = new Intersection("I1", new Position(500, 200));
-        inter.addIncoming(road1);
-        inter.addIncoming(road4);
-        inter.addOutgoing(road2);
-        inter.addOutgoing(road3);
+                Intersection inter = new Intersection("I1", new Position(500, 200));
+                inter.addIncoming(road1);
+                inter.addIncoming(road4);
+                inter.addOutgoing(road2);
+                inter.addOutgoing(road3);
 
-        env.addRoad(road1);
-        env.addRoad(road2);
-        env.addRoad(road3);
-        env.addRoad(road4);
-        env.addIntersection(inter);
+                env.addRoad(road1);
+                env.addRoad(road2);
+                env.addRoad(road3);
+                env.addRoad(road4);
+                env.addIntersection(inter);
 
-        // 2. Start GUI
-        new SimulationWindow();
+                // 2. Start GUI
+                new SimulationWindow();
 
-        // 3. Initialize JADE
-        Runtime rt = Runtime.instance();
-        Profile p = new ProfileImpl();
-        AgentContainer container = rt.createMainContainer(p);
+                // Create Roads
+                env.addRoad(new RoadSegment("R1", new Position(0, 300), new Position(300, 300), 2, 50, true));
+                env.addRoad(new RoadSegment("R2", new Position(300, 300), new Position(300, 600), 2, 50, true));
 
-        try {
-            // 4. Launch Traffic Lights at Intersection
-            // Light 1 for horizontal traffic (R1)
-            AgentController light1 = container.createNewAgent("Light_R1",
-                    "com.traffic.agents.TrafficLightAgent", new Object[] { "480.0", "180.0", "R1" });
-            light1.start();
+                // Curved Road Segment (Bezier: R3 connects R1-end to RA1 boundary)
+                env.addRoad(new RoadSegment("R3_Curve",
+                                new Position(300, 300),
+                                new Position(500 - 70.7, 500 - 70.7), // End on circle boundary (45 deg)
+                                new Position(500 - 70.7, 300), // Control Point
+                                2, 40, true));
 
-            // Light 2 for vertical traffic (R4) - Offset by 13s (Green + Yellow of R1)
-            AgentController light2 = container.createNewAgent("Light_R4",
-                    "com.traffic.agents.TrafficLightAgent", new Object[] { "480.0", "150.0", "R4", "13000" });
-            light2.start();
+                // Central Roundabout
+                Roundabout ra = new Roundabout("RA1", new Position(500, 500), 100);
+                env.addRoundabout(ra);
 
-            // 5. Launch Vehicle Spawner
-            AgentController spawner = container.createNewAgent("Spawner",
-                    "com.traffic.agents.VehicleSpawnerAgent", null);
-            spawner.start();
+                // Roads connecting to Roundabout
+                env.addRoad(new RoadSegment("R4_to_RA", new Position(500, 500 - 200), new Position(500, 500 - 100), 2,
+                                30, true));
+                env.addRoad(new RoadSegment("R5_from_RA", new Position(500 + 100, 500), new Position(500 + 300, 500), 2,
+                                30, true));
 
-            // 6. Launch Metrics Collection
-            AgentController metrics = container.createNewAgent("Metrics",
-                    "com.traffic.agents.MetricsAgent", null);
-            metrics.start();
+                // Add a south-connecting road for symmetry
+                env.addRoad(new RoadSegment("R6_from_RA", new Position(500, 500 + 100), new Position(500, 500 + 300), 2,
+                                30, true));
 
-        } catch (Exception e) {
-            e.printStackTrace();
+                // Intersections
+                Intersection i1 = new Intersection("I1", new Position(300, 300));
+                i1.addIncoming(env.getRoads().get("R1"));
+                i1.addOutgoing(env.getRoads().get("R2"));
+                i1.addOutgoing(env.getRoads().get("R3_Curve"));
+                env.addIntersection(i1);
+
+                // 3. Initialize JADE
+                Runtime rt = Runtime.instance();
+                Profile p = new ProfileImpl();
+                AgentContainer mainContainer = rt.createMainContainer(p);
+
+                // Agents
+                try {
+                        // Traffic Lights
+                        AgentController t1 = mainContainer.createNewAgent("TL_R1_I1",
+                                        "com.traffic.agents.TrafficLightAgent",
+                                        new Object[] { "290", "300", "R1" });
+                        t1.start();
+
+                        // Spawner (Updated for 5-vehicle limit)
+                        AgentController spawner = mainContainer.createNewAgent("Spawner",
+                                        "com.traffic.agents.VehicleSpawnerAgent",
+                                        null);
+                        spawner.start();
+
+                        // Metrics agent
+                        AgentController metrics = mainContainer.createNewAgent("Metrics",
+                                        "com.traffic.agents.MetricsAgent", null);
+                        metrics.start();
+
+                } catch (Exception e) {
+                        e.printStackTrace();
+                }
         }
-    }
 }
