@@ -1,21 +1,48 @@
 package com.traffic.environment;
 
-import com.traffic.model.LightState;
-import com.traffic.model.Position;
+import com.traffic.model.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public class Environment {
     private static Environment instance;
 
-    // Map of agent name -> position
+    // Physical state
     private Map<String, Position> vehiclePositions = new ConcurrentHashMap<>();
-    // Map of light name -> state (position is fixed)
     private Map<String, LightState> lightStates = new ConcurrentHashMap<>();
     private Map<String, Position> lightPositions = new ConcurrentHashMap<>();
 
-    private double roadLength = 1000.0;
-    private int numLanes = 2;
+    // Map structure
+    private Map<String, RoadSegment> roads = new ConcurrentHashMap<>();
+    private Map<String, Intersection> intersections = new ConcurrentHashMap<>();
+    private List<Incident> activeIncidents = new ArrayList<>();
+
+    public static class Incident {
+        public String roadId;
+        public Position position;
+        public long duration;
+
+        public Incident(String roadId, Position position, long duration) {
+            this.roadId = roadId;
+            this.position = position;
+            this.duration = duration;
+        }
+    }
+
+    public void addIncident(Incident incident) {
+        activeIncidents.add(incident);
+    }
+
+    public void removeIncident(Incident incident) {
+        activeIncidents.remove(incident);
+    }
+
+    public List<Incident> getActiveIncidents() {
+        return activeIncidents;
+    }
 
     private Environment() {
     }
@@ -27,6 +54,24 @@ public class Environment {
         return instance;
     }
 
+    // Map Management
+    public void addRoad(RoadSegment road) {
+        roads.put(road.getId(), road);
+    }
+
+    public void addIntersection(Intersection inter) {
+        intersections.put(inter.getId(), inter);
+    }
+
+    public Map<String, RoadSegment> getRoads() {
+        return roads;
+    }
+
+    public Map<String, Intersection> getIntersections() {
+        return intersections;
+    }
+
+    // Dynamic State Management
     public void updateVehiclePosition(String name, Position pos) {
         vehiclePositions.put(name, pos);
     }
@@ -52,44 +97,56 @@ public class Environment {
         return lightPositions;
     }
 
-    public double getRoadLength() {
-        return roadLength;
+    // Spatial Queries
+    public List<String> getNearbyAgents(Position myPos, double radius, String excludeName) {
+        return vehiclePositions.entrySet().parallelStream()
+                .filter(e -> !e.getKey().equals(excludeName))
+                .filter(e -> e.getValue().distanceTo(myPos) <= radius)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
     }
 
-    public int getNumLanes() {
-        return numLanes;
-    }
+    public String getNearestLight(Position myPos, double radius) {
+        String nearest = null;
+        double minDist = radius;
 
-    // Helper to find vehicle ahead in same lane
-    public Double getVehicleAhead(String myName, Position myPos) {
-        double minDistance = Double.MAX_VALUE;
-        Double aheadX = null;
-
-        for (Map.Entry<String, Position> entry : vehiclePositions.entrySet()) {
-            if (entry.getKey().equals(myName))
-                continue;
-
-            Position otherPos = entry.getValue();
-            if (otherPos.getLane() == myPos.getLane()) {
-                double dist = otherPos.getX() - myPos.getX();
-                if (dist > 0 && dist < minDistance) {
-                    minDistance = dist;
-                    aheadX = otherPos.getX();
-                }
-            }
-        }
-        return aheadX;
-    }
-
-    // Helper to find if there's a light ahead
-    public String getLightAhead(Position myPos, double horizon) {
         for (Map.Entry<String, Position> entry : lightPositions.entrySet()) {
-            Position lPos = entry.getValue();
-            double dist = lPos.getX() - myPos.getX();
-            if (dist > 0 && dist < horizon) {
-                return entry.getKey();
+            double dist = entry.getValue().distanceTo(myPos);
+            if (dist < minDist) {
+                minDist = dist;
+                nearest = entry.getKey();
             }
         }
-        return null;
+        return nearest;
+    }
+
+    public RoadSegment getRoadAt(Position pos) {
+        RoadSegment nearest = null;
+        double minDist = Double.MAX_VALUE;
+        for (RoadSegment road : roads.values()) {
+            Position mid = new Position((road.getStart().getX() + road.getEnd().getX()) / 2,
+                    (road.getStart().getY() + road.getEnd().getY()) / 2);
+            double dist = pos.distanceTo(mid);
+            if (dist < minDist) {
+                minDist = dist;
+                nearest = road;
+            }
+        }
+        return nearest;
+    }
+
+    public int countVehiclesOnRoad(String roadId) {
+        RoadSegment road = roads.get(roadId);
+        if (road == null)
+            return 0;
+
+        int count = 0;
+        for (Position pos : vehiclePositions.values()) {
+            double d = pos.distanceTo(road.getStart()) + pos.distanceTo(road.getEnd());
+            if (Math.abs(d - road.getLength()) < 20.0) {
+                count++;
+            }
+        }
+        return count;
     }
 }

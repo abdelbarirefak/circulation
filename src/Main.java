@@ -1,43 +1,68 @@
-
 import jade.core.Profile;
 import jade.core.ProfileImpl;
 import jade.core.Runtime;
 import jade.wrapper.AgentContainer;
 import jade.wrapper.AgentController;
 import com.traffic.gui.SimulationWindow;
+import com.traffic.environment.Environment;
+import com.traffic.model.*;
 
 public class Main {
     public static void main(String[] args) {
-        // 1. Start the GUI
+        // 1. Setup Map Network
+        Environment env = Environment.getInstance();
+
+        // Road 1: Left to Right (Incoming to I1)
+        RoadSegment road1 = new RoadSegment("R1", new Position(50, 200), new Position(500, 200), 2, 5.0, true);
+        // Road 4: Top to Bottom (Incoming to I1)
+        RoadSegment road4 = new RoadSegment("R4", new Position(500, -50), new Position(500, 200), 2, 5.0, true);
+
+        // Road 2: Vertical down from intersection (Outgoing)
+        RoadSegment road2 = new RoadSegment("R2", new Position(500, 200), new Position(500, 500), 2, 4.0, true);
+        // Road 3: Right to Left from intersection (Outgoing)
+        RoadSegment road3 = new RoadSegment("R3", new Position(500, 200), new Position(900, 200), 2, 6.0, true);
+
+        Intersection inter = new Intersection("I1", new Position(500, 200));
+        inter.addIncoming(road1);
+        inter.addIncoming(road4);
+        inter.addOutgoing(road2);
+        inter.addOutgoing(road3);
+
+        env.addRoad(road1);
+        env.addRoad(road2);
+        env.addRoad(road3);
+        env.addRoad(road4);
+        env.addIntersection(inter);
+
+        // 2. Start GUI
         new SimulationWindow();
 
-        // 2. Initialize JADE Runtime
+        // 3. Initialize JADE
         Runtime rt = Runtime.instance();
         Profile p = new ProfileImpl();
-        // p.setParameter(Profile.MAIN_HOST, "localhost");
-        // p.setParameter(Profile.GUI, "true"); // Optional JADE GUI
-
-        AgentContainer mainContainer = rt.createMainContainer(p);
+        AgentContainer container = rt.createMainContainer(p);
 
         try {
-            // 3. Launch Traffic Light Agents
-            AgentController light1 = mainContainer.createNewAgent("Light1",
-                    "com.traffic.agents.TrafficLightAgent", new Object[] { "500.0", "0" });
+            // 4. Launch Traffic Lights at Intersection
+            // Light 1 for horizontal traffic (R1)
+            AgentController light1 = container.createNewAgent("Light_R1",
+                    "com.traffic.agents.TrafficLightAgent", new Object[] { "480.0", "180.0", "R1" });
             light1.start();
 
-            AgentController light2 = mainContainer.createNewAgent("Light2",
-                    "com.traffic.agents.TrafficLightAgent", new Object[] { "900.0", "1" });
+            // Light 2 for vertical traffic (R4) - Offset by 13s (Green + Yellow of R1)
+            AgentController light2 = container.createNewAgent("Light_R4",
+                    "com.traffic.agents.TrafficLightAgent", new Object[] { "480.0", "150.0", "R4", "13000" });
             light2.start();
 
-            // 4. Launch Car Agents
-            for (int i = 1; i <= 5; i++) {
-                double startX = i * 100.0;
-                int lane = (i % 2);
-                AgentController car = mainContainer.createNewAgent("Car" + i,
-                        "com.traffic.agents.CarAgent", new Object[] { String.valueOf(startX), String.valueOf(lane) });
-                car.start();
-                Thread.sleep(500); // Staggered start
-            }
+            // 5. Launch Vehicle Spawner
+            AgentController spawner = container.createNewAgent("Spawner",
+                    "com.traffic.agents.VehicleSpawnerAgent", null);
+            spawner.start();
+
+            // 6. Launch Metrics Collection
+            AgentController metrics = container.createNewAgent("Metrics",
+                    "com.traffic.agents.MetricsAgent", null);
+            metrics.start();
 
         } catch (Exception e) {
             e.printStackTrace();
