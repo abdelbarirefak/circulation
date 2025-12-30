@@ -83,6 +83,8 @@ public class VehicleAgent extends BaseTrafficAgent {
         List<String> nearby = env.getNearbyAgents(position, perceptionRadius, getLocalName());
         for (String otherName : nearby) {
             Position otherPos = env.getVehiclePositions().get(otherName);
+            if (otherPos == null)
+                continue; // Race condition: vehicle removed but still in nearby list
             double dist = position.distanceTo(otherPos);
             if (dist < 5.0)
                 continue;

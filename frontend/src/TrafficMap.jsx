@@ -53,17 +53,27 @@ function Vehicle({ vehicle, isSelected, onClick }) {
 }
 
 function Road({ road }) {
-    const length = Math.sqrt(Math.pow(road.endX - road.startX, 2) + Math.pow(road.endY - road.startY, 2));
-    const angle = Math.atan2(road.endY - road.startY, road.endX - road.startX);
-    const centerX = (road.startX + road.endX) / 2;
-    const centerY = (road.startY + road.endY) / 2;
+    const startX = road.startX || 0;
+    const startY = road.startY || 0;
+    const endX = road.endX || 0;
+    const endY = road.endY || 0;
+    const lanes = road.lanes || 2;
+
+    const length = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)) || 1;
+    const angle = Math.atan2(endY - startY, endX - startX);
+    const centerX = (startX + endX) / 2;
+    const centerY = (startY + endY) / 2;
 
     return (
         <group position={[centerX, -centerY, 0]} rotation={[0, 0, -angle]}>
             {/* Road Surface */}
             <mesh>
-                <planeGeometry args={[length, road.lanes * 28]} />
-                <meshStandardMaterial color="#1e293b" />
+                <planeGeometry args={[length, lanes * 28]} />
+                <meshStandardMaterial
+                    color="#ffffff"
+                    emissive="#ffffff"
+                    emissiveIntensity={0.5}
+                />
             </mesh>
 
             {/* Lane Lines (Dashed) */}
@@ -109,26 +119,33 @@ function VehiclePath({ path }) {
 }
 
 export function TrafficMap({ state, map, onSelectVehicle, selectedId }) {
+    console.log('DIAGNOSTIC: TrafficMap Rendering', { roads: map?.roads?.length, vehicles: state?.vehicles?.length });
+
     return (
-        <Canvas camera={{ position: [800, -800, 800], fov: 45 }}>
-            <color attach="background" args={['#020617']} />
-            <fog attach="fog" args={['#020617', 500, 2500]} />
-            <ambientLight intensity={0.4} />
-            <spotLight position={[1000, 1000, 1000]} angle={0.15} penumbra={1} intensity={1} castShadow />
-            <pointLight position={[-500, -500, -500]} intensity={0.5} color="#3b82f6" />
+        <Canvas
+            camera={{ position: [400, -400, 2000], fov: 50, near: 1, far: 10000 }}
+            style={{ background: '#020617' }}
+        >
+            <ambientLight intensity={3} />
+
+            {/* LARGE CENTER MARKER */}
+            <mesh position={[400, -400, 0]}>
+                <sphereGeometry args={[50, 32, 32]} />
+                <meshStandardMaterial color="white" emissive="white" emissiveIntensity={5} />
+            </mesh>
+
+            <mesh position={[0, 0, 0]}>
+                <sphereGeometry args={[30, 32, 32]} />
+                <meshStandardMaterial color="red" emissive="red" emissiveIntensity={5} />
+            </mesh>
 
             {/* Roads */}
-            {map.roads.map(r => (
+            {map?.roads?.map(r => (
                 <Road key={r.id} road={r} />
             ))}
 
-            {/* Vehicle Paths (Transparency Layer) */}
-            {state.vehicles.map(v => (
-                <VehiclePath key={`path-${v.id}`} path={v.path} />
-            ))}
-
             {/* Vehicles */}
-            {state.vehicles.map(v => (
+            {state?.vehicles?.map(v => (
                 <Vehicle
                     key={v.id}
                     vehicle={v}
@@ -138,14 +155,9 @@ export function TrafficMap({ state, map, onSelectVehicle, selectedId }) {
             ))}
 
             <OrbitControls
-                enableRotate={true}
-                enableDamping={true}
-                dampingFactor={0.05}
-                maxPolarAngle={Math.PI / 2.1}
-                minDistance={100}
-                maxDistance={1500}
+                target={[400, -400, 0]}
             />
-            <gridHelper args={[4000, 80, "#1e293b", "#0f172a"]} rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -1]} />
+            <gridHelper args={[5000, 50]} rotation={[Math.PI / 2, 0, 0]} />
         </Canvas>
     );
 }

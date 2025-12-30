@@ -9,7 +9,7 @@ function App() {
   const [selectedVehicle, setSelectedVehicle] = React.useState(null);
 
   const handleControl = (type, value) => {
-    fetch('http://localhost:3001/control', {
+    fetch('/api/control', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type, value })

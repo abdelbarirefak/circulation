@@ -56,7 +56,9 @@ public class Main {
                 env.addIntersection(i1);
 
                 // 2. Start API Server (Modern Dashboard Bridge)
+                System.out.println("Starting API Bridge initialization...");
                 startApiServer(env);
+                System.out.println("Main initialization complete.");
 
                 // 3. Initialize JADE
                 Runtime rt = Runtime.instance();
@@ -77,7 +79,8 @@ public class Main {
 
         private static void startApiServer(Environment env) {
                 try {
-                        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+                        HttpServer server = HttpServer.create(new InetSocketAddress(8085), 0);
+                        server.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());
 
                         // Endpoint: Simulation State (SSE)
                         server.createContext("/api/stream", exchange -> {
@@ -102,13 +105,22 @@ public class Main {
 
                         // Endpoint: Static Map
                         server.createContext("/api/map", exchange -> {
-                                String mapJson = serializeMap(env);
-                                byte[] response = mapJson.getBytes();
-                                exchange.getResponseHeaders().add("Content-Type", "application/json");
-                                exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
-                                exchange.sendResponseHeaders(200, response.length);
-                                exchange.getResponseBody().write(response);
-                                exchange.getResponseBody().close();
+                                System.out.println("Java: Incoming request for /api/map");
+                                try {
+                                        String mapJson = serializeMap(env);
+                                        byte[] response = mapJson.getBytes();
+                                        exchange.getResponseHeaders().add("Content-Type", "application/json");
+                                        exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+                                        exchange.sendResponseHeaders(200, response.length);
+                                        exchange.getResponseBody().write(response);
+                                        exchange.getResponseBody().close();
+                                        System.out.println("Java: Successfully served map data.");
+                                } catch (Exception e) {
+                                        System.err.println("Java Error: Failed to serialize map data.");
+                                        e.printStackTrace();
+                                        exchange.sendResponseHeaders(500, -1);
+                                        exchange.close();
+                                }
                         });
 
                         server.createContext("/api/control", exchange -> {
@@ -176,10 +188,16 @@ public class Main {
                         });
 
                         server.start();
-                        System.out.println("API Bridge started at http://localhost:8080");
+                        System.out.println("=================================================");
+                        System.out.println("!!! DIGITAL TWIN API BRIDGE IS LIVE !!!");
+                        System.out.println("Listening on: http://localhost:8085");
+                        System.out.println("Map Data: http://localhost:8085/api/map");
+                        System.out.println("Live Stream: http://localhost:8085/api/stream");
+                        System.out.println("=================================================");
                 } catch (java.net.BindException be) {
-                        System.err.println("!!! PORT 8080 ALREADY IN USE. API BRIDGE FAILED TO START.");
-                        System.err.println("Monitoring will continue within JADE but dashboard data may be stale.");
+                        System.err.println("!!! CRITICAL: PORT 8085 IS BLOCKED !!!");
+                        System.err.println("The API Bridge could NOT start. Visualization will be blank.");
+                        System.err.println("Please kill any process using port 8085 and restart.");
                 } catch (Exception e) {
                         e.printStackTrace();
                 }
@@ -192,10 +210,10 @@ public class Main {
                         Position pos = entry.getValue();
                         String thought = env.getVehicleThought(id);
                         String pathJson = env.getVehiclePath(id).stream()
-                                        .map(p -> String.format("[%f, %f]", p.getX(), p.getY()))
+                                        .map(p -> String.format(java.util.Locale.US, "[%f, %f]", p.getX(), p.getY()))
                                         .collect(Collectors.joining(", ", "[", "]"));
 
-                        return String.format(
+                        return String.format(java.util.Locale.US,
                                         "{ \"id\": \"%s\", \"x\": %.2f, \"y\": %.2f, \"lane\": %d, \"road\": \"%s\", \"thought\": \"%s\", \"path\": %s }",
                                         id, pos.getX(), pos.getY(), 0, env.getVehicleRoadId(id), thought, pathJson);
                 }).collect(Collectors.joining(",")));
@@ -206,7 +224,7 @@ public class Main {
         private static String serializeMap(Environment env) {
                 StringBuilder sb = new StringBuilder("{ \"roads\": [");
                 sb.append(env.getRoads().values().stream().map(r -> {
-                        return String.format(
+                        return String.format(java.util.Locale.US,
                                         "{ \"id\": \"%s\", \"startX\": %.2f, \"startY\": %.2f, \"endX\": %.2f, \"endY\": %.2f, \"lanes\": %d }",
                                         r.getId(), r.getStart().getX(), r.getStart().getY(), r.getEnd().getX(),
                                         r.getEnd().getY(), r.getLanes());

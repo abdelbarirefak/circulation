@@ -158,6 +158,8 @@
 .viewport-container {
   flex: 1;
   position: relative;
+  overflow: hidden;
+  background-color: #020617;
 }
 
 .overlay-info {

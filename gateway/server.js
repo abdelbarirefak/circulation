@@ -9,34 +9,84 @@ app.use(cors());
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "*",
+        origin: "http://localhost:5173",
         methods: ["GET", "POST"]
     }
 });
 
+
 let simulationPaused = false;
 let simulationSpeed = 1.0;
 
-// Poll Java Backend for state (Bridge until active JADE Gateway is used)
-setInterval(async () => {
+// Bridge SSE stream from Java Backend to Socket.io
+function connectToJavaSource() {
+    console.log('Attempting to connect to Java SSE stream...');
+    axios({
+        method: 'get',
+        url: 'http://localhost:8085/api/stream',
+        responseType: 'stream'
+    }).then(response => {
+        console.log('Connected to Java SSE source');
+        response.data.on('data', chunk => {
+            const lines = chunk.toString().split('\n');
+            lines.forEach(line => {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.replace('data: ', ''));
+                        io.emit('state_update', data);
+                    } catch (e) {
+                        // Incomplete or malformed JSON chunk
+                    }
+                }
+            });
+        });
+        response.data.on('end', () => {
+            console.warn('Java SSE stream ended. Reconnecting...');
+            setTimeout(connectToJavaSource, 2000);
+        });
+    }).catch(err => {
+        console.error('Failed to connect to Java Backend (is it running?). Retrying in 2s...');
+        setTimeout(connectToJavaSource, 2000);
+    });
+}
+
+connectToJavaSource();
+
+// Proxy for Map Data
+app.get('/api/map', async (req, res) => {
     try {
-        const response = await axios.get('http://localhost:8080/api/stream');
-        // Java SSE stream is usually handled differently, but for simplicity here 
-        // we assume a consolidated state endpoint exists or we use the SSE stream directly.
-        // For the Digital Twin, we'll emit the periodic state.
-        io.emit('state_update', response.data);
+        console.log('Gateway: Fetching map from Java Backend (port 8085)...');
+        const response = await axios.get('http://localhost:8085/api/map', { timeout: 5000 });
+        console.log('Gateway: Successfully fetched map data.');
+        res.json(response.data);
     } catch (err) {
-        // Java backend might be down
+        console.error('Gateway Error: Failed to fetch map from Java Backend:', err.message);
+        if (err.response) {
+            console.error('Java Backend responded with:', err.response.status, err.response.data);
+        }
+        res.status(500).json({
+            error: 'Failed to fetch map from Java Backend',
+            details: err.message
+        });
     }
-}, 50); // 20Hz polling for smooth UI
+});
+
+// Proxy for Control Actions (Legacy/Direct HTTP support if needed)
+app.post('/api/control', async (req, res) => {
+    try {
+        await axios.post('http://localhost:8085/api/control', req.body);
+        res.sendStatus(200);
+    } catch (err) {
+        res.sendStatus(500);
+    }
+});
 
 io.on('connection', (socket) => {
     console.log('Client connected to Digital Twin Gateway');
 
     socket.on('control_action', (data) => {
         console.log('Control Action:', data);
-        // Forward to Java Backend
-        axios.post('http://localhost:8080/api/control', data).catch(e => { });
+        axios.post('http://localhost:8085/api/control', data).catch(e => { });
 
         if (data.type === 'pause') simulationPaused = true;
         if (data.type === 'resume') simulationPaused = false;
@@ -49,7 +99,8 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = 3001;
+const PORT = 4000;
 server.listen(PORT, () => {
     console.log(`Digital Twin Gateway running on port ${PORT}`);
 });
+
